@@ -26,11 +26,6 @@
 *.a
 *.lib
 
-# Executables
-*.exe
-*.out
-*.app
-
 .ccls-cache
 .replit
 replit.nix
