@@ -6,9 +6,9 @@
 #include <stdlib.h>
 #include "libxl.h"
 
-#define LIMITE_COLA 10000 /* Capacidad maxima de la cola */
-#define OCUPADO 1         /* Indicador de Servidor Ocupado */
-#define LIBRE 0           /* Indicador de Servidor Libre */
+#define LIMITE_COLA 1000 /* Capacidad maxima de la cola */
+#define OCUPADO 1        /* Indicador de Servidor Ocupado */
+#define LIBRE 0          /* Indicador de Servidor Libre */
 
 int sig_tipo_evento, num_clientes_espera, num_esperas_requerido, num_eventos,
     num_entra_cola, estado_servidor;
@@ -16,10 +16,6 @@ float area_num_entra_cola, area_estado_servidor, media_entre_llegadas,
     media_atencion, tiempo_simulacion, tiempo_llegada[LIMITE_COLA + 1],
     tiempo_ultimo_evento, tiempo_sig_evento[3], total_de_esperas;
 FILE *parametros, *resultados;
-
-// Variables para impresión de resultados en Excel
-// Permitirá el registro de estadísticas por cliente en el sistema
-int id_ultimo_llegado = 2, id_ultimo_atendido = 2;
 
 void inicializar(void);
 void controltiempo(void);
@@ -32,22 +28,19 @@ float expon(float mean);
 // Write and log events to excel
 using namespace libxl;
 
-Book *book = xlCreateBook();
-Sheet *sheet = NULL;
+/* Estructura útil para el registro de eventos y resultados de la simulación */
+struct ReporteXLS
+{
+  Book *book;
+  Sheet *tiempos;
+  Sheet *registro_eventos;
+  int fila_tiempo_llegada_actual;
+  int fila_eventos_actual;
+  int fila_tiempo_salida_actual;
+} *reporte_xls;
 
 int main(void) /* Funcion Principal */
 {
-  /*  Cargar hoja de cálculo con resultados */
-  if (book)
-  {
-    sheet = book->addSheet("Resultados");
-    if (sheet)
-    {
-      sheet->writeStr(1, 1, "Número de cliente");
-      sheet->writeStr(1, 2, "Diferencia de tiempo de llegada");
-      sheet->writeStr(1, 3, "Tiempo de atención");
-    }
-  }
   /* Abre los archivos de entrada y salida */
 
   parametros = fopen("param.txt", "r");
@@ -110,13 +103,6 @@ int main(void) /* Funcion Principal */
   fclose(parametros);
   fclose(resultados);
 
-  /*  Guarda los resultados en el archivo de excel */
-  if (book)
-  {
-    book->save("logResultados.xls");
-    book->release();
-  }
-
   return 0;
 }
 
@@ -144,6 +130,43 @@ void inicializar(void) /* Funcion de inicializacion. */
 
   tiempo_sig_evento[1] = tiempo_simulacion + expon(media_entre_llegadas);
   tiempo_sig_evento[2] = 1.0e+30;
+
+  /* Inicializando variables de registro de eventos y reporte de tiempos en Hoja de cálculo */
+
+  reporte_xls = (struct ReporteXLS *)malloc(sizeof(struct ReporteXLS));
+  reporte_xls->book = xlCreateBook();
+
+  /*  Cargar hoja de cálculo con resultados */
+
+  if (reporte_xls->book)
+  {
+    reporte_xls->tiempos = reporte_xls->book->addSheet("Tiempos de clientes");
+    reporte_xls->registro_eventos = reporte_xls->book->addSheet("Registro de eventos");
+
+    /*
+      Las filas empiezan a contar desde 2, excluyendo el título de la librería usada
+      y el título de las columnas que se genera a continuación
+    */
+
+    reporte_xls->fila_tiempo_llegada_actual = 2;
+    reporte_xls->fila_tiempo_salida_actual = 2;
+    reporte_xls->fila_eventos_actual = 2;
+
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeStr(1, 1, "Número de cliente");
+      reporte_xls->tiempos->writeStr(1, 2, "Diferencia de tiempo de llegada");
+      reporte_xls->tiempos->writeStr(1, 3, "Tiempo de atención");
+    }
+
+    if (reporte_xls->registro_eventos)
+    {
+      reporte_xls->registro_eventos->writeStr(1, 1, "Tiempo");
+      reporte_xls->registro_eventos->writeStr(1, 2, "Tipo");
+      reporte_xls->registro_eventos->writeStr(1, 3, "Estado del servidor");
+      reporte_xls->registro_eventos->writeStr(1, 4, "Número de clientes en cola");
+    }
+  }
 }
 
 void controltiempo(void) /* Funcion controltiempo */
@@ -184,15 +207,8 @@ void llegada(void) /* Funcion de llegada */
   float espera;
 
   /* Programa la siguiente llegada. */
+
   float diferencia_tiempo_llegada = expon(media_entre_llegadas);
-
-  /* Registrar tiempo entre llegadas para éste cliente */
-  if (sheet)
-  {
-    sheet->writeNum(id_ultimo_llegado, 1, id_ultimo_llegado);
-    sheet->writeNum(id_ultimo_llegado++, 2, diferencia_tiempo_llegada);
-  }
-
   tiempo_sig_evento[1] = tiempo_simulacion + diferencia_tiempo_llegada;
 
   /* Revisa si el servidor esta OCUPADO. */
@@ -200,7 +216,7 @@ void llegada(void) /* Funcion de llegada */
   if (estado_servidor == OCUPADO)
   {
 
-    /* Sservidor OCUPADO, aumenta el numero de clientes en cola */
+    /* Servidor OCUPADO, aumenta el numero de clientes en cola */
 
     ++num_entra_cola;
 
@@ -242,6 +258,34 @@ void llegada(void) /* Funcion de llegada */
 
     tiempo_sig_evento[2] = tiempo_simulacion + expon(media_atencion);
   }
+
+  /* Registrar tiempo entre llegadas para éste cliente */
+
+  if (reporte_xls->tiempos)
+  {
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual,
+        1,
+        reporte_xls->fila_tiempo_llegada_actual - 1);
+
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual++,
+        2,
+        diferencia_tiempo_llegada);
+  }
+
+  /* Registrar ocurrencia de evento */
+  if (reporte_xls->registro_eventos)
+  {
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual, 1, tiempo_simulacion);
+    reporte_xls->registro_eventos->writeStr(
+        reporte_xls->fila_eventos_actual, 2, "Llegada");
+    reporte_xls->registro_eventos->writeStr(
+        reporte_xls->fila_eventos_actual, 3, (estado_servidor == OCUPADO) ? "Ocupado" : "Libre");
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual++, 4, num_entra_cola);
+  }
 }
 
 void salida(void) /* Funcion de Salida. */
@@ -249,26 +293,20 @@ void salida(void) /* Funcion de Salida. */
   int i;
   float espera;
 
-  /* Registrar tiempo de atención */
-  if (sheet)
-  {
-    espera = tiempo_simulacion - tiempo_llegada[1];
-    sheet->writeNum(id_ultimo_atendido++, 3, espera);
-  }
-
   /* Revisa si la cola esta vacia */
 
   if (num_entra_cola == 0)
   {
 
     /* La cola esta vacia, pasa el servidor a LIBRE y
-    no considera el evento de salida*/
+    no considera el evento de salida */
+
     estado_servidor = LIBRE;
     tiempo_sig_evento[2] = 1.0e+30;
   }
-
   else
   {
+    float tiempo_de_atencion = expon(media_atencion);
 
     /* La cola no esta vacia, disminuye el numero de clientes en cola. */
     --num_entra_cola;
@@ -276,16 +314,40 @@ void salida(void) /* Funcion de Salida. */
     /*Calcula la espera del cliente que esta siendo atendido y
     actualiza el acumulador de espera */
 
+    espera = tiempo_simulacion - tiempo_llegada[1];
     total_de_esperas += espera;
 
     /*Incrementa el numero de clientes en espera, y programa la salida. */
     ++num_clientes_espera;
-    tiempo_sig_evento[2] = tiempo_simulacion + expon(media_atencion);
+    tiempo_sig_evento[2] = tiempo_simulacion + tiempo_de_atencion;
 
-    /* Mueve cada cliente en la cola ( si los hay ) una posicion hacia adelante
+    /*
+      Mueve cada cliente en la cola ( si los hay ) una posicion hacia adelante
      */
     for (i = 1; i <= num_entra_cola; ++i)
       tiempo_llegada[i] = tiempo_llegada[i + 1];
+
+    /* Registrar tiempo de atención para éste cliente */
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeNum(
+          reporte_xls->fila_tiempo_salida_actual++,
+          3,
+          tiempo_de_atencion);
+    }
+  }
+
+  /* Registrar ocurrencia de evento */
+  if (reporte_xls->registro_eventos)
+  {
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual, 1, tiempo_simulacion);
+    reporte_xls->registro_eventos->writeStr(
+        reporte_xls->fila_eventos_actual, 2, "Salida");
+    reporte_xls->registro_eventos->writeStr(
+        reporte_xls->fila_eventos_actual, 3, (estado_servidor == OCUPADO) ? "Ocupado" : "Libre");
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual++, 4, num_entra_cola);
   }
 }
 
@@ -300,6 +362,13 @@ void reportes(void) /* Funcion generadora de reportes. */
           area_estado_servidor / tiempo_simulacion);
   fprintf(resultados, "Tiempo de terminacion de la simulacion%12.3f minutos",
           tiempo_simulacion);
+
+  /* Guardar reporte de registro de eventos en hoja de cálculo */
+  if (reporte_xls->book)
+  {
+    reporte_xls->book->save("logResultados.xls");
+    reporte_xls->book->release();
+  }
 }
 
 void actualizar_estad_prom_tiempo(
