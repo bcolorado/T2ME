@@ -216,11 +216,6 @@ void llegada(void) /* Funcion de llegada */
 {
   float espera;
 
-  /* Programa la siguiente llegada. */
-
-  float diferencia_tiempo_llegada = expon(media_entre_llegadas);
-  tiempo_sig_evento[1] = tiempo_simulacion + diferencia_tiempo_llegada;
-
   /* Revisa si el servidor esta OCUPADO. */
 
   if (estado_servidor == OCUPADO)
@@ -282,6 +277,8 @@ void llegada(void) /* Funcion de llegada */
 
   /* Registrar tiempo entre llegadas para éste cliente */
 
+  float diferencia_tiempo_llegada = expon(media_entre_llegadas);
+
   if (reporte_xls->tiempos)
   {
     reporte_xls->tiempos->writeNum(
@@ -307,6 +304,10 @@ void llegada(void) /* Funcion de llegada */
     reporte_xls->registro_eventos->writeNum(
         reporte_xls->fila_eventos_actual++, 4, num_entra_cola);
   }
+
+  /* Programa la siguiente llegada. */
+
+  tiempo_sig_evento[1] = tiempo_simulacion + diferencia_tiempo_llegada;
 }
 
 void salida(void) /* Funcion de Salida. */
@@ -338,9 +339,8 @@ void salida(void) /* Funcion de Salida. */
     espera = tiempo_simulacion - tiempo_llegada[1];
     total_de_esperas += espera;
 
-    /*Incrementa el numero de clientes en espera, y programa la salida. */
+    /* Incrementa el numero de clientes en espera */
     ++num_clientes_espera;
-    tiempo_sig_evento[2] = tiempo_simulacion + tiempo_de_atencion;
 
     /*
       Mueve cada cliente en la cola ( si los hay ) una posicion hacia adelante
@@ -357,6 +357,9 @@ void salida(void) /* Funcion de Salida. */
           3,
           tiempo_de_atencion);
     }
+
+    /* Programar siguiente salida */
+    tiempo_sig_evento[2] = tiempo_simulacion + tiempo_de_atencion;
   }
 
   /* Registrar ocurrencia de evento */
