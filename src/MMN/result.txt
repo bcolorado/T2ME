@@ -4,18 +4,18 @@ Tiempo promedio de llegada      7.000 minutos
 
 Tiempo promedio de atencion           8.000 minutos
 
-Tiempo de simulacion         480.000 minutos
+Tiempo de simulacion     8000000.000 minutos
 
-Numero de clientes             3
+Numero de clientes             5
 
 Numero de servidores             1
 
 
 
-Espera promedio en la cola      1.754 minutos
+Espera promedio en la cola      6.463 minutos
 
-Numero promedio en cola     0.284
+Numero promedio en cola     1.383
 
-Uso promedio de los servidores          0.654
+Uso promedio de los servidores          0.813
 
-Tiempo de terminacion de la simulacion      18.538 minutos
+Tiempo de terminacion de la simulacion      34.191 minutos
