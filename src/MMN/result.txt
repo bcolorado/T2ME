@@ -8,14 +8,14 @@ Tiempo de simulacion         480.000 minutos
 
 Numero de clientes           100
 
-Numero de servidores             5
+Numero de servidores             4
 
 
 
-Espera promedio en la cola      0.000 minutos
+Espera promedio en la cola      0.129 minutos
 
-Numero promedio en cola     0.000
+Numero promedio en cola     0.018
 
-Uso promedio de los servidores          0.199
+Uso promedio de los servidores          0.249
 
 Tiempo de terminacion de la simulacion     480.000 minutos

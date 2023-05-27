@@ -197,7 +197,7 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
         reporte_xls->registro_eventos->writeStr(1, i + 3, nombre_servidor);
       }
 
-      reporte_xls->registro_eventos->writeStr(1, numero_servidores + 2, "Número de clientes en cola");
+      reporte_xls->registro_eventos->writeStr(1, numero_servidores + 3, "Número de clientes en cola");
     }
   }
 
@@ -480,6 +480,6 @@ void registrar_ocurrencia_evento(char *nombre_de_evento)
     /* Registrar número actual de clientes en cola */
     reporte_xls->registro_eventos->writeNum(
         reporte_xls->fila_eventos_actual++,
-        numero_servidores + 2, num_entra_cola);
+        numero_servidores + 3, num_entra_cola);
   }
 }
