@@ -41,31 +41,8 @@ struct ReporteXLS
 
 int main(void) /* Funcion Principal */
 {
-  /* Abre los archivos de entrada y salida */
 
-  parametros = fopen("param.txt", "r");
-  resultados = fopen("result.txt", "w");
-
-  /* Especifica el numero de eventos para la funcion controltiempo. */
-
-  num_eventos = 2;
-
-  /* Lee los parametros de enrtrada. */
-
-  fscanf(parametros, "%f %f %d", &media_entre_llegadas, &media_atencion,
-         &num_esperas_requerido);
-
-  /* Escribe en el archivo de salida los encabezados del reporte y los
-   * parametros iniciales */
-
-  fprintf(resultados, "Sistema de Colas Simple\n\n");
-  fprintf(resultados, "Tiempo promedio de llegada%11.3f minutos\n\n",
-          media_entre_llegadas);
-  fprintf(resultados, "Tiempo promedio de atencion%16.3f minutos\n\n",
-          media_atencion);
-  fprintf(resultados, "Numero de clientes%14d\n\n", num_esperas_requerido);
-
-  /* iInicializa la simulacion. */
+  /* Inicializa la simulacion. */
 
   inicializar();
 
@@ -108,6 +85,7 @@ int main(void) /* Funcion Principal */
 
 void inicializar(void) /* Funcion de inicializacion. */
 {
+
   /* Inicializa el reloj de la simulacion. */
 
   tiempo_simulacion = 0.0;
@@ -124,12 +102,6 @@ void inicializar(void) /* Funcion de inicializacion. */
   total_de_esperas = 0.0;
   area_num_entra_cola = 0.0;
   area_estado_servidor = 0.0;
-
-  /* Inicializa la lista de eventos. Ya que no hay clientes, el evento salida
-     (terminacion del servicio) no se tiene en cuenta */
-
-  tiempo_sig_evento[1] = tiempo_simulacion + expon(media_entre_llegadas);
-  tiempo_sig_evento[2] = 1.0e+30;
 
   /* Inicializando variables de registro de eventos y reporte de tiempos en Hoja de cálculo */
 
@@ -166,6 +138,44 @@ void inicializar(void) /* Funcion de inicializacion. */
       reporte_xls->registro_eventos->writeStr(1, 3, "Estado del servidor");
       reporte_xls->registro_eventos->writeStr(1, 4, "Número de clientes en cola");
     }
+  }
+
+  /*** Lectura de parámetros del sistema ***/
+
+  /* Abre los archivos de entrada y salida */
+
+  parametros = fopen("param.txt", "r");
+  resultados = fopen("result.txt", "w");
+
+  /* Especifica el numero de eventos para la funcion controltiempo. */
+
+  num_eventos = 2;
+
+  /* Lee los parametros de enrtrada. */
+
+  fscanf(parametros, "%f %f %d", &media_entre_llegadas, &media_atencion,
+         &num_esperas_requerido);
+
+  /* Inicializa la lista de eventos. Ya que no hay clientes, el evento salida
+     (terminacion del servicio) no se tiene en cuenta */
+
+  float diferencia_tiempo_llegada = expon(media_entre_llegadas);
+  tiempo_sig_evento[1] = tiempo_simulacion + diferencia_tiempo_llegada;
+  tiempo_sig_evento[2] = 1.0e+30;
+
+  /* Registrar tiempo de llegada para éste cliente */
+
+  if (reporte_xls->tiempos)
+  {
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual,
+        1,
+        reporte_xls->fila_tiempo_llegada_actual - 1);
+
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual++,
+        2,
+        diferencia_tiempo_llegada);
   }
 }
 
@@ -256,7 +266,18 @@ void llegada(void) /* Funcion de llegada */
 
     /* Programa una salida ( servicio terminado ). */
 
-    tiempo_sig_evento[2] = tiempo_simulacion + expon(media_atencion);
+    float tiempo_de_atencion = expon(media_atencion);
+    tiempo_sig_evento[2] = tiempo_simulacion + tiempo_de_atencion;
+
+    /* Registrar tiempo de atención para éste cliente */
+
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeNum(
+          reporte_xls->fila_tiempo_salida_actual++,
+          3,
+          tiempo_de_atencion);
+    }
   }
 
   /* Registrar tiempo entre llegadas para éste cliente */
@@ -328,6 +349,7 @@ void salida(void) /* Funcion de Salida. */
       tiempo_llegada[i] = tiempo_llegada[i + 1];
 
     /* Registrar tiempo de atención para éste cliente */
+
     if (reporte_xls->tiempos)
     {
       reporte_xls->tiempos->writeNum(
@@ -338,6 +360,7 @@ void salida(void) /* Funcion de Salida. */
   }
 
   /* Registrar ocurrencia de evento */
+
   if (reporte_xls->registro_eventos)
   {
     reporte_xls->registro_eventos->writeNum(
@@ -353,6 +376,16 @@ void salida(void) /* Funcion de Salida. */
 
 void reportes(void) /* Funcion generadora de reportes. */
 {
+  /* Escribe en el archivo de salida los encabezados del reporte y los
+   * parametros iniciales */
+
+  fprintf(resultados, "Sistema de Colas Simple\n\n");
+  fprintf(resultados, "Tiempo promedio de llegada%11.3f minutos\n\n",
+          media_entre_llegadas);
+  fprintf(resultados, "Tiempo promedio de atencion%16.3f minutos\n\n",
+          media_atencion);
+  fprintf(resultados, "Numero de clientes%14d\n\n", num_esperas_requerido);
+
   /* Calcula y estima los estimados de las medidas deseadas de desempe�o */
   fprintf(resultados, "\n\nEspera promedio en la cola%11.3f minutos\n\n",
           total_de_esperas / num_clientes_espera);
@@ -371,9 +404,11 @@ void reportes(void) /* Funcion generadora de reportes. */
   }
 }
 
-void actualizar_estad_prom_tiempo(
-    void) /* Actualiza los acumuladores de
-                                                                                 area para las estadisticas de tiempo promedio. */
+void actualizar_estad_prom_tiempo(void)
+/*
+  Actualiza los acumuladores de
+  area para las estadisticas de tiempo promedio.
+*/
 {
   float time_since_last_event;
 
@@ -393,6 +428,5 @@ void actualizar_estad_prom_tiempo(
 float expon(float media) /* Funcion generadora de la exponencias */
 {
   /* Retorna una variable aleatoria exponencial con media "media"*/
-  float x = -media * log(lcgrand(10));
-  return x;
+  return -media * log(lcgrand(21));
 }

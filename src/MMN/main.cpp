@@ -5,13 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
+#include "libxl.h"
 
 #define LIMITE_COLA 100 /* Capacidad maxima de la cola */
 #define OCUPADO 1       /* Indicador de Servidor Ocupado */
 #define LIBRE 0         /* Indicador de Servidor Libre */
 
 int sig_tipo_evento, num_clientes_espera, num_esperas_requerido, num_eventos,
-    num_entra_cola, numero_servidores, servidor_salida;
+    num_entra_cola, numero_servidores, servidor_salida, cod_error;
 
 float area_num_entra_cola, media_entre_llegadas,
     media_atencion, tiempo_simulacion, tiempo_llegada[LIMITE_COLA + 1],
@@ -31,36 +32,27 @@ void actualizar_estad_prom_tiempo(void);
 float expon(float mean);
 float sum(std::vector<float> array);
 
+// Write and log events to excel's
+using namespace libxl;
+
+/* Estructura útil para el registro de eventos y resultados de la simulación */
+struct ReporteXLS
+{
+  Book *book;
+  Sheet *tiempos;
+  Sheet *registro_eventos;
+  int fila_tiempo_llegada_actual;
+  int fila_eventos_actual;
+  int fila_tiempo_salida_actual;
+} *reporte_xls;
+
 int main(void) /* Funcion Principal */
 {
-  /* Abre los archivos de entrada y salida */
 
-  parametros = fopen("param.txt", "r");
-  resultados = fopen("result.txt", "w");
+  /* Inicializar código de error */
+  cod_error = 0;
 
-  /* Especifica el numero de eventos para la funcion controltiempo. */
-
-  /* Lee los parametros de entrada. */
-
-  fscanf(parametros, "%f %f %f %d %d", &media_entre_llegadas, &media_atencion,
-         &tiempo_simulacion_maxima,
-         &num_esperas_requerido, &numero_servidores);
-
-  num_eventos = 2;
-
-  /* Escribe en el archivo de salida los encabezados del reporte y los
-   * parametros iniciales */
-
-  fprintf(resultados, "Sistema de Colas Simple\n\n");
-  fprintf(resultados, "Tiempo promedio de llegada%11.3f minutos\n\n",
-          media_entre_llegadas);
-  fprintf(resultados, "Tiempo promedio de atencion%16.3f minutos\n\n",
-          media_atencion);
-  fprintf(resultados, "Tiempo de simulacion%16.3f minutos\n\n", tiempo_simulacion_maxima);
-  fprintf(resultados, "Numero de clientes%14d\n\n", num_esperas_requerido);
-  fprintf(resultados, "Numero de servidores%14d\n\n", numero_servidores);
-
-  /* iInicializa la simulacion. */
+  /* Inicializa la simulacion. */
 
   inicializar();
 
@@ -123,6 +115,21 @@ void inicializar(void) /* Funcion de inicializacion. */
   area_num_entra_cola = 0.0;
 
   area_estado_servidor.resize(numero_servidores + 1);
+
+  /* Abre los archivos de entrada y salida */
+
+  parametros = fopen("param.txt", "r");
+  resultados = fopen("result.txt", "w");
+
+  /* Especifica el numero de eventos para la funcion controltiempo. */
+
+  /* Lee los parametros de entrada. */
+
+  fscanf(parametros, "%f %f %f %d %d", &media_entre_llegadas, &media_atencion,
+         &tiempo_simulacion_maxima,
+         &num_esperas_requerido, &numero_servidores);
+
+  num_eventos = 2;
 
   /* Inicializa la lista de eventos. Ya que no hay clientes, el evento salida
      (terminacion del servicio) no se tiene en cuenta */
@@ -231,8 +238,6 @@ void llegada(void) /* Funcion de llegada */
     ++num_clientes_espera;
     estado_servidores[servidor_libre] = OCUPADO;
 
-    
-
     /* Programa una salida ( servicio terminado ). */
     tiempo_sig_evento[num_eventos + servidor_libre] = tiempo_simulacion + expon(media_atencion);
   }
@@ -285,6 +290,18 @@ void reportes(void) /* Funcion generadora de reportes. */
     tiempo_simulacion = tiempo_simulacion_maxima;
   }
 
+  /* Escribe en el archivo de salida los encabezados del reporte y los
+   * parametros iniciales */
+
+  fprintf(resultados, "Sistema de Colas Simple\n\n");
+  fprintf(resultados, "Tiempo promedio de llegada%11.3f minutos\n\n",
+          media_entre_llegadas);
+  fprintf(resultados, "Tiempo promedio de atencion%16.3f minutos\n\n",
+          media_atencion);
+  fprintf(resultados, "Tiempo de simulacion%16.3f minutos\n\n", tiempo_simulacion_maxima);
+  fprintf(resultados, "Numero de clientes%14d\n\n", num_esperas_requerido);
+  fprintf(resultados, "Numero de servidores%14d\n\n", numero_servidores);
+
   /* Calcula y estima los estimados de las medidas deseadas de desempe�o */
   fprintf(resultados, "\n\nEspera promedio en la cola%11.3f minutos\n\n",
           total_de_esperas / num_clientes_espera);
@@ -296,9 +313,10 @@ void reportes(void) /* Funcion generadora de reportes. */
           tiempo_simulacion);
 }
 
-void actualizar_estad_prom_tiempo(
-    void) /* Actualiza los acumuladores de
-                                                                                 area para las estadisticas de tiempo promedio. */
+void actualizar_estad_prom_tiempo(void)
+/*
+  Actualiza los acumuladores de area para las estadisticas de tiempo promedio.
+*/
 {
   float time_since_last_event;
 

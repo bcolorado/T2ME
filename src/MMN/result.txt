@@ -16,6 +16,6 @@ Espera promedio en la cola      1.754 minutos
 
 Numero promedio en cola     0.284
 
-Uso promedio de los servidores          0.654
+Uso promedio de los servidores          0.000
 
 Tiempo de terminacion de la simulacion      18.538 minutos
