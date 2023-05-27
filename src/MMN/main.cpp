@@ -23,7 +23,7 @@ std::vector<int> estado_servidores;
 
 FILE *parametros, *resultados;
 
-void inicializar(void);
+void inicializar(char *, char *);
 void controltiempo(void);
 void llegada(void);
 void salida(void);
@@ -31,6 +31,7 @@ void reportes(void);
 void actualizar_estad_prom_tiempo(void);
 float expon(float mean);
 float sum(std::vector<float> array);
+void registrar_ocurrencia_evento(char *);
 
 // Write and log events to excel's
 using namespace libxl;
@@ -49,18 +50,24 @@ struct ReporteXLS
 int main(void) /* Funcion Principal */
 {
 
-  /* Inicializar código de error */
+  /*** Inicializar código de error ***/
   cod_error = 0;
 
-  /* Inicializa la simulacion. */
+  /*** Inicializar la simulacion ***/
 
-  inicializar();
+  inicializar((char *)"param.txt", (char *)"result.txt");
 
   /* Corre la simulacion mientras no se llegue al numero de clientes
    * especificaco en el archivo de entrada*/
 
-  while (num_clientes_espera < num_esperas_requerido && tiempo_simulacion < tiempo_simulacion_maxima)
+  bool stop_condition = num_clientes_espera < num_esperas_requerido;
+  stop_condition = stop_condition && tiempo_simulacion < tiempo_simulacion_maxima;
+  stop_condition = stop_condition && sig_tipo_evento != 2;
+
+  while (stop_condition && cod_error == 0)
   {
+
+    /*** Manejo de tiempo espacio ***/
 
     /* Determina el siguiente evento */
     controltiempo();
@@ -75,11 +82,19 @@ int main(void) /* Funcion Principal */
       llegada();
       break;
     case 2:
+      /* Fin de simulación */
       break;
     default:
       salida();
     }
+
+    /* Reevalur condición de parada */
+    stop_condition = num_clientes_espera < num_esperas_requerido;
+    stop_condition = stop_condition && tiempo_simulacion < tiempo_simulacion_maxima;
+    stop_condition = stop_condition && sig_tipo_evento != 2;
   }
+
+  /*** Generar reporte de simulación ***/
 
   /* Invoca el generador de reportes y termina la simulacion. */
   reportes();
@@ -90,11 +105,30 @@ int main(void) /* Funcion Principal */
   return 0;
 }
 
-void inicializar(void) /* Funcion de inicializacion. */
+/* Funcion de inicializacion. */
+void inicializar(char *archivo_parametros, char *archivo_salida)
 {
+
+  /*** Inicializar valores tiempo espacio ***/
+
   /* Inicializa el reloj de la simulacion. */
 
   tiempo_simulacion = 0.0;
+
+  /*** Inicializar valores de estudio del sistema ***/
+
+  /* Inicializa los contadores estadisticos. */
+
+  num_clientes_espera = 0;
+  total_de_esperas = 0.0;
+  area_num_entra_cola = 0.0;
+
+  /* Inicializando variables de registro de eventos y reporte de tiempos en Hoja de cálculo */
+
+  reporte_xls = (struct ReporteXLS *)malloc(sizeof(struct ReporteXLS));
+  reporte_xls->book = xlCreateBook();
+
+  /*** Inicializar valores de características del sistema ***/
 
   /* Inicializa las variables de estado */
 
@@ -108,31 +142,71 @@ void inicializar(void) /* Funcion de inicializacion. */
   num_entra_cola = 0;
   tiempo_ultimo_evento = 0.0;
 
-  /* Inicializa los contadores estadisticos. */
-
-  num_clientes_espera = 0;
-  total_de_esperas = 0.0;
-  area_num_entra_cola = 0.0;
-
-  area_estado_servidor.resize(numero_servidores + 1);
+  /*** Inicializar valores de parámetros del Sistema ***/
 
   /* Abre los archivos de entrada y salida */
 
-  parametros = fopen("param.txt", "r");
-  resultados = fopen("result.txt", "w");
-
-  /* Especifica el numero de eventos para la funcion controltiempo. */
+  parametros = fopen(archivo_parametros, "r");
+  resultados = fopen(archivo_salida, "w");
 
   /* Lee los parametros de entrada. */
 
-  fscanf(parametros, "%f %f %f %d %d", &media_entre_llegadas, &media_atencion,
+  fscanf(parametros, "%f %f %f %d %d",
+         &media_entre_llegadas, &media_atencion,
          &tiempo_simulacion_maxima,
          &num_esperas_requerido, &numero_servidores);
 
+  /* Especifica el numero de eventos para la funcion controltiempo. */
   num_eventos = 2;
 
-  /* Inicializa la lista de eventos. Ya que no hay clientes, el evento salida
-     (terminacion del servicio) no se tiene en cuenta */
+  area_estado_servidor.resize(numero_servidores + 1);
+
+  /*  Crear hoja de cálculo para registro de resultados */
+
+  if (reporte_xls->book)
+  {
+    reporte_xls->tiempos = reporte_xls->book->addSheet("Tiempos de clientes");
+    reporte_xls->registro_eventos = reporte_xls->book->addSheet("Registro de eventos");
+
+    /*
+      Las filas empiezan a contar desde 2, excluyendo el título de la librería usada
+      y el título de las columnas que se genera a continuación
+    */
+
+    reporte_xls->fila_tiempo_llegada_actual = 2;
+    reporte_xls->fila_tiempo_salida_actual = 2;
+    reporte_xls->fila_eventos_actual = 2;
+
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeStr(1, 1, "Número de cliente");
+      reporte_xls->tiempos->writeStr(1, 2, "Diferencia de tiempo de llegada");
+      reporte_xls->tiempos->writeStr(1, 3, "Tiempo de atención");
+    }
+
+    if (reporte_xls->registro_eventos)
+    {
+      reporte_xls->registro_eventos->writeStr(1, 1, "Tiempo");
+      reporte_xls->registro_eventos->writeStr(1, 2, "Tipo");
+
+      for (int i = 0; i < numero_servidores; i++)
+      {
+        char tmp_nombre_servidor[] = "Estado del servidor %d";
+        char nombre_servidor[50];
+        sprintf(nombre_servidor, tmp_nombre_servidor, i + 1);
+        reporte_xls->registro_eventos->writeStr(1, i + 3, nombre_servidor);
+      }
+
+      reporte_xls->registro_eventos->writeStr(1, numero_servidores + 2, "Número de clientes en cola");
+    }
+  }
+
+  /*** Inicializa la lista de eventos ***/
+
+  /*
+    Ya que no hay clientes, el evento salida
+    (terminacion del servicio) no se tiene en cuenta
+  */
 
   tiempo_sig_evento.resize(num_eventos + numero_servidores + 1);
 
@@ -144,7 +218,8 @@ void inicializar(void) /* Funcion de inicializacion. */
   }
 }
 
-void controltiempo(void) /* Funcion controltiempo */
+/* Funcion de manejo de tiempo */
+void controltiempo(void)
 {
   int i;
   float min_tiempo_sig_evento = 1.0e+29;
@@ -172,16 +247,18 @@ void controltiempo(void) /* Funcion controltiempo */
     exit(1);
   }
 
-  /* TLa lista de eventos no esta vacia, adelanta el reloj de la simulacion. */
+  /*** La lista de eventos no esta vacia, adelanta el reloj de la simulacion. ***/
 
   tiempo_simulacion = min_tiempo_sig_evento;
 }
 
-void llegada(void) /* Funcion de llegada */
+/* Funcion de llegada */
+void llegada(void)
 {
   float espera;
 
-  tiempo_sig_evento[1] = tiempo_simulacion + expon(media_entre_llegadas);
+  float tiempo_entre_llegadas = expon(media_entre_llegadas);
+  tiempo_sig_evento[1] = tiempo_simulacion + tiempo_entre_llegadas;
 
   int servidor_libre;
   bool servidor_desocupado_encontrado = false;
@@ -239,11 +316,28 @@ void llegada(void) /* Funcion de llegada */
     estado_servidores[servidor_libre] = OCUPADO;
 
     /* Programa una salida ( servicio terminado ). */
-    tiempo_sig_evento[num_eventos + servidor_libre] = tiempo_simulacion + expon(media_atencion);
+    float tiempo_atencion = expon(media_atencion);
+    tiempo_sig_evento[num_eventos + servidor_libre] = tiempo_simulacion + tiempo_atencion;
   }
+
+  /* Registrar tiempo entre llegadas para éste cliente */
+
+  if (reporte_xls->tiempos)
+  {
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual,
+        1, reporte_xls->fila_tiempo_llegada_actual - 1);
+
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual++,
+        2, tiempo_entre_llegadas);
+  }
+
+  registrar_ocurrencia_evento((char *)"Llegada");
 }
 
-void salida(void) /* Funcion de Salida. */
+/* Funcion de Salida. */
+void salida(void)
 {
   int i;
   float espera;
@@ -280,9 +374,12 @@ void salida(void) /* Funcion de Salida. */
     for (i = 1; i <= num_entra_cola; ++i)
       tiempo_llegada[i] = tiempo_llegada[i + 1];
   }
+
+  registrar_ocurrencia_evento((char *)"Salida");
 }
 
-void reportes(void) /* Funcion generadora de reportes. */
+/* Funcion generadora de reportes. */
+void reportes(void)
 {
 
   if (tiempo_simulacion > tiempo_simulacion_maxima)
@@ -311,6 +408,13 @@ void reportes(void) /* Funcion generadora de reportes. */
           (sum(area_estado_servidor) / numero_servidores) / tiempo_simulacion);
   fprintf(resultados, "Tiempo de terminacion de la simulacion%12.3f minutos",
           tiempo_simulacion);
+
+  /* Guardar reporte de registro de eventos en hoja de cálculo */
+  if (reporte_xls->book)
+  {
+    reporte_xls->book->save("logResultados.xls");
+    reporte_xls->book->release();
+  }
 }
 
 void actualizar_estad_prom_tiempo(void)
@@ -351,4 +455,31 @@ float sum(std::vector<float> array)
     sum += array[i];
   }
   return sum;
+}
+
+/* Registrar eventos de simulación, junto a estado del sistema */
+void registrar_ocurrencia_evento(char *nombre_de_evento)
+{
+  if (reporte_xls->registro_eventos)
+  {
+    /* Registrar tiempo de simulación y nombre del evento */
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual, 1, tiempo_simulacion);
+    reporte_xls->registro_eventos->writeStr(
+        reporte_xls->fila_eventos_actual, 2, nombre_de_evento);
+
+    /* Registrar estado de todos los servidores */
+    for (int i = 0; i < numero_servidores; i++)
+    {
+      int estado_servidor = estado_servidores[i + 1];
+      reporte_xls->registro_eventos->writeStr(
+          reporte_xls->fila_eventos_actual, i + 3,
+          (estado_servidor == OCUPADO) ? "Ocupado" : "Libre");
+    }
+
+    /* Registrar número actual de clientes en cola */
+    reporte_xls->registro_eventos->writeNum(
+        reporte_xls->fila_eventos_actual++,
+        numero_servidores + 2, num_entra_cola);
+  }
 }
