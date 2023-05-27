@@ -4,10 +4,11 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "libxl.h"
 
-#define LIMITE_COLA 100 /* Capacidad maxima de la cola */
-#define OCUPADO 1       /* Indicador de Servidor Ocupado */
-#define LIBRE 0         /* Indicador de Servidor Libre */
+#define LIMITE_COLA 10000 /* Capacidad maxima de la cola */
+#define OCUPADO 1         /* Indicador de Servidor Ocupado */
+#define LIBRE 0           /* Indicador de Servidor Libre */
 
 int sig_tipo_evento, num_clientes_espera, num_esperas_requerido, num_eventos,
     num_entra_cola, estado_servidor;
@@ -15,6 +16,10 @@ float area_num_entra_cola, area_estado_servidor, media_entre_llegadas,
     media_atencion, tiempo_simulacion, tiempo_llegada[LIMITE_COLA + 1],
     tiempo_ultimo_evento, tiempo_sig_evento[3], total_de_esperas;
 FILE *parametros, *resultados;
+
+// Variables para impresión de resultados en Excel
+// Permitirá el registro de estadísticas por cliente en el sistema
+int id_ultimo_llegado = 2, id_ultimo_atendido = 2;
 
 void inicializar(void);
 void controltiempo(void);
@@ -24,8 +29,25 @@ void reportes(void);
 void actualizar_estad_prom_tiempo(void);
 float expon(float mean);
 
+// Write and log events to excel
+using namespace libxl;
+
+Book *book = xlCreateBook();
+Sheet *sheet = NULL;
+
 int main(void) /* Funcion Principal */
 {
+  /*  Cargar hoja de cálculo con resultados */
+  if (book)
+  {
+    sheet = book->addSheet("Resultados");
+    if (sheet)
+    {
+      sheet->writeStr(1, 1, "Número de cliente");
+      sheet->writeStr(1, 2, "Diferencia de tiempo de llegada");
+      sheet->writeStr(1, 3, "Tiempo de atención");
+    }
+  }
   /* Abre los archivos de entrada y salida */
 
   parametros = fopen("param.txt", "r");
@@ -55,9 +77,10 @@ int main(void) /* Funcion Principal */
   inicializar();
 
   /* Corre la simulacion mientras no se llegue al numero de clientes
-   * especificaco en el archivo de entrada*/
+   * especificado en el archivo de entrada*/
 
-  while (num_clientes_espera < num_esperas_requerido) {
+  while (num_clientes_espera < num_esperas_requerido)
+  {
 
     /* Determina el siguiente evento */
 
@@ -69,7 +92,8 @@ int main(void) /* Funcion Principal */
 
     /* Invoca la funcion del evento adecuado. */
 
-    switch (sig_tipo_evento) {
+    switch (sig_tipo_evento)
+    {
     case 1:
       llegada();
       break;
@@ -85,6 +109,13 @@ int main(void) /* Funcion Principal */
 
   fclose(parametros);
   fclose(resultados);
+
+  /*  Guarda los resultados en el archivo de excel */
+  if (book)
+  {
+    book->save("logResultados.xls");
+    book->release();
+  }
 
   return 0;
 }
@@ -125,14 +156,16 @@ void controltiempo(void) /* Funcion controltiempo */
   /*  Determina el tipo de evento del evento que debe ocurrir. */
 
   for (i = 1; i <= num_eventos; ++i)
-    if (tiempo_sig_evento[i] < min_tiempo_sig_evento) {
+    if (tiempo_sig_evento[i] < min_tiempo_sig_evento)
+    {
       min_tiempo_sig_evento = tiempo_sig_evento[i];
       sig_tipo_evento = i;
     }
 
   /* Revisa si la lista de eventos esta vacia. */
 
-  if (sig_tipo_evento == 0) {
+  if (sig_tipo_evento == 0)
+  {
 
     /* La lista de eventos esta vacia, se detiene la simulacion. */
 
@@ -151,12 +184,21 @@ void llegada(void) /* Funcion de llegada */
   float espera;
 
   /* Programa la siguiente llegada. */
+  float diferencia_tiempo_llegada = expon(media_entre_llegadas);
 
-  tiempo_sig_evento[1] = tiempo_simulacion + expon(media_entre_llegadas);
+  /* Registrar tiempo entre llegadas para éste cliente */
+  if (sheet)
+  {
+    sheet->writeNum(id_ultimo_llegado, 1, id_ultimo_llegado);
+    sheet->writeNum(id_ultimo_llegado++, 2, diferencia_tiempo_llegada);
+  }
 
-  /* Reisa si el servidor esta OCUPADO. */
+  tiempo_sig_evento[1] = tiempo_simulacion + diferencia_tiempo_llegada;
 
-  if (estado_servidor == OCUPADO) {
+  /* Revisa si el servidor esta OCUPADO. */
+
+  if (estado_servidor == OCUPADO)
+  {
 
     /* Sservidor OCUPADO, aumenta el numero de clientes en cola */
 
@@ -164,7 +206,8 @@ void llegada(void) /* Funcion de llegada */
 
     /* Verifica si hay condici�n de desbordamiento */
 
-    if (num_entra_cola > LIMITE_COLA) {
+    if (num_entra_cola > LIMITE_COLA)
+    {
 
       /* Se ha desbordado la cola, detiene la simulacion */
 
@@ -180,7 +223,8 @@ void llegada(void) /* Funcion de llegada */
     tiempo_llegada[num_entra_cola] = tiempo_simulacion;
   }
 
-  else {
+  else
+  {
 
     /*  El servidor esta LIBRE, por lo tanto el cliente que llega tiene tiempo
        de eespera=0 (Las siguientes dos lineas del programa son para claridad, y
@@ -205,9 +249,17 @@ void salida(void) /* Funcion de Salida. */
   int i;
   float espera;
 
+  /* Registrar tiempo de atención */
+  if (sheet)
+  {
+    espera = tiempo_simulacion - tiempo_llegada[1];
+    sheet->writeNum(id_ultimo_atendido++, 3, espera);
+  }
+
   /* Revisa si la cola esta vacia */
 
-  if (num_entra_cola == 0) {
+  if (num_entra_cola == 0)
+  {
 
     /* La cola esta vacia, pasa el servidor a LIBRE y
     no considera el evento de salida*/
@@ -215,7 +267,8 @@ void salida(void) /* Funcion de Salida. */
     tiempo_sig_evento[2] = 1.0e+30;
   }
 
-  else {
+  else
+  {
 
     /* La cola no esta vacia, disminuye el numero de clientes en cola. */
     --num_entra_cola;
@@ -223,7 +276,6 @@ void salida(void) /* Funcion de Salida. */
     /*Calcula la espera del cliente que esta siendo atendido y
     actualiza el acumulador de espera */
 
-    espera = tiempo_simulacion - tiempo_llegada[1];
     total_de_esperas += espera;
 
     /*Incrementa el numero de clientes en espera, y programa la salida. */
@@ -272,6 +324,6 @@ void actualizar_estad_prom_tiempo(
 float expon(float media) /* Funcion generadora de la exponencias */
 {
   /* Retorna una variable aleatoria exponencial con media "media"*/
-
-  return -media * log(lcgrand(1));
+  float x = -media * log(lcgrand(10));
+  return x;
 }
