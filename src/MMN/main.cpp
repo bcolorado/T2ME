@@ -47,6 +47,23 @@ struct ReporteXLS
   int fila_tiempo_salida_actual;
 } *reporte_xls;
 
+/*
+  Estructura para recolección de resultados de simulación
+  (en caso de que se requiera de múltiples ejecuciones)
+*/
+struct Resultados
+{
+  float tiempo_promedio_llegada;
+  float tiempo_promedio_atencion;
+  float tiempo_simulacion;
+  int numero_clientes;
+  int numero_servidores;
+  float espera_promedio_cola;
+  float numero_promedio_cola;
+  float uso_promedio_servidores;
+  float tiempo_terminacion_simulacion;
+};
+
 int main(void) /* Funcion Principal */
 {
 
@@ -201,6 +218,19 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
     }
   }
 
+  float tiempo_entre_llegadas = expon(media_entre_llegadas);
+
+  /* Guardar tiempo de llegada en hoja de cálculo */
+  if (reporte_xls->tiempos)
+  {
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual, 1,
+        reporte_xls->fila_tiempo_llegada_actual - 1);
+    reporte_xls->tiempos->writeNum(
+        reporte_xls->fila_tiempo_llegada_actual++,
+        2, tiempo_entre_llegadas);
+  }
+
   /*** Inicializa la lista de eventos ***/
 
   /*
@@ -210,7 +240,7 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
 
   tiempo_sig_evento.resize(num_eventos + numero_servidores + 1);
 
-  tiempo_sig_evento[1] = tiempo_simulacion + expon(media_entre_llegadas);
+  tiempo_sig_evento[1] = tiempo_simulacion + tiempo_entre_llegadas;
   tiempo_sig_evento[2] = tiempo_simulacion_maxima;
   for (int i = 3; i <= num_eventos + numero_servidores; i++)
   {
@@ -258,7 +288,6 @@ void llegada(void)
   float espera;
 
   float tiempo_entre_llegadas = expon(media_entre_llegadas);
-  tiempo_sig_evento[1] = tiempo_simulacion + tiempo_entre_llegadas;
 
   int servidor_libre;
   bool servidor_desocupado_encontrado = false;
@@ -318,6 +347,15 @@ void llegada(void)
     /* Programa una salida ( servicio terminado ). */
     float tiempo_atencion = expon(media_atencion);
     tiempo_sig_evento[num_eventos + servidor_libre] = tiempo_simulacion + tiempo_atencion;
+
+    /* Guardar tiempo de atención en hoja de cálculo */
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeNum(
+          reporte_xls->fila_tiempo_salida_actual++,
+          3,
+          tiempo_atencion);
+    }
   }
 
   /* Registrar tiempo entre llegadas para éste cliente */
@@ -334,6 +372,9 @@ void llegada(void)
   }
 
   registrar_ocurrencia_evento((char *)"Llegada");
+
+  /* Programa la siguiente llegada. */
+  tiempo_sig_evento[1] = tiempo_simulacion + tiempo_entre_llegadas;
 }
 
 /* Funcion de Salida. */
@@ -365,14 +406,33 @@ void salida(void)
     espera = tiempo_simulacion - tiempo_llegada[1];
     total_de_esperas += espera;
 
-    /*Incrementa el numero de clientes en espera, y programa la salida. */
+    /*Incrementa el numero de clientes en espera */
     ++num_clientes_espera;
-    tiempo_sig_evento[sig_tipo_evento] = tiempo_simulacion + expon(media_atencion);
 
-    /* Mueve cada cliente en la cola ( si los hay ) una posicion hacia adelante
+    /* Guardar tiempo de atención en hoja de cálculo */
+    float tiempo_atencion = expon(media_atencion);
+
+    /*
+      Mueve cada cliente en la cola ( si los hay ) una posicion hacia adelante
      */
     for (i = 1; i <= num_entra_cola; ++i)
       tiempo_llegada[i] = tiempo_llegada[i + 1];
+
+    /*
+      Registra el tiempo de atención del cliente que sale
+    */
+
+    /* Guardar tiempo de atención en hoja de cálculo */
+    if (reporte_xls->tiempos)
+    {
+      reporte_xls->tiempos->writeNum(
+          reporte_xls->fila_tiempo_salida_actual++,
+          3,
+          tiempo_atencion);
+    }
+
+    /* Programa una salida ( servicio terminado ). */
+    tiempo_sig_evento[sig_tipo_evento] = tiempo_simulacion + tiempo_atencion;
   }
 
   registrar_ocurrencia_evento((char *)"Salida");
@@ -444,7 +504,7 @@ float expon(float media) /* Funcion generadora de la exponencias */
 {
   /* Retorna una variable aleatoria exponencial con media "media"*/
 
-  return -media * log(lcgrand(1));
+  return -media * log(lcgrand(21));
 }
 
 float sum(std::vector<float> array)
