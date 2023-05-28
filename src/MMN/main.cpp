@@ -274,7 +274,8 @@ void controltiempo(void)
 
     fprintf(resultados, "\nLa lista de eventos esta vacia %f",
             tiempo_simulacion);
-    exit(1);
+    cod_error = 1;
+    return;
   }
 
   /*** La lista de eventos no esta vacia, adelanta el reloj de la simulacion. ***/
@@ -320,7 +321,8 @@ void llegada(void)
       fprintf(resultados,
               "\nDesbordamiento del arreglo tiempo_llegada a la hora");
       fprintf(resultados, "%f", tiempo_simulacion);
-      exit(2);
+      cod_error = 2;
+      return;
     }
 
     /* Todavia hay espacio en la cola, se almacena el tiempo de llegada del
@@ -504,7 +506,7 @@ float expon(float media) /* Funcion generadora de la exponencias */
 {
   /* Retorna una variable aleatoria exponencial con media "media"*/
 
-  return -media * log(lcgrand(21));
+  return -media * log(lcgrand(25));
 }
 
 float sum(std::vector<float> array)
