@@ -433,7 +433,7 @@ void reportes(void)
   /* Escribe en el archivo de salida los encabezados del reporte y los
    * parametros iniciales */
 
-  fprintf(resultados, "Sistema de Colas Simple\n\n");
+  fprintf(resultados, "Sistema de Colas M/M/%d\n\n", numero_servidores);
   fprintf(resultados, "Tiempo promedio de llegada%11.3f minutos\n\n",
           media_entre_llegadas);
   fprintf(resultados, "Tiempo promedio de atencion%16.3f minutos\n\n",
