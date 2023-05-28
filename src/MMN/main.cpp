@@ -7,16 +7,16 @@
 #include <vector>
 #include "libxl.h"
 
-#define LIMITE_COLA 100 /* Capacidad maxima de la cola */
-#define OCUPADO 1       /* Indicador de Servidor Ocupado */
-#define LIBRE 0         /* Indicador de Servidor Libre */
+#define LIMITE_COLA 1000 /* Capacidad maxima de la cola */
+#define OCUPADO 1        /* Indicador de Servidor Ocupado */
+#define LIBRE 0          /* Indicador de Servidor Libre */
 
 int sig_tipo_evento, num_clientes_espera, num_esperas_requerido, num_eventos,
     num_entra_cola, numero_servidores, servidor_salida, cod_error;
 
 float area_num_entra_cola, media_entre_llegadas,
     media_atencion, tiempo_simulacion, tiempo_llegada[LIMITE_COLA + 1],
-    tiempo_ultimo_evento, total_de_esperas, tiempo_simulacion_maxima;
+    tiempo_ultimo_evento, total_de_esperas, tiempo_simulacion_maxima, tiempo_servidores_ocupados;
 
 std::vector<float> tiempo_sig_evento, area_estado_servidor;
 std::vector<int> estado_servidores;
@@ -46,23 +46,6 @@ struct ReporteXLS
   int fila_eventos_actual;
   int fila_tiempo_salida_actual;
 } *reporte_xls;
-
-/*
-  Estructura para recolección de resultados de simulación
-  (en caso de que se requiera de múltiples ejecuciones)
-*/
-struct Resultados
-{
-  float tiempo_promedio_llegada;
-  float tiempo_promedio_atencion;
-  float tiempo_simulacion;
-  int numero_clientes;
-  int numero_servidores;
-  float espera_promedio_cola;
-  float numero_promedio_cola;
-  float uso_promedio_servidores;
-  float tiempo_terminacion_simulacion;
-};
 
 int main(void) /* Funcion Principal */
 {
@@ -139,6 +122,7 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
   num_clientes_espera = 0;
   total_de_esperas = 0.0;
   area_num_entra_cola = 0.0;
+  tiempo_servidores_ocupados = 0.0;
 
   /* Inicializando variables de registro de eventos y reporte de tiempos en Hoja de cálculo */
 
@@ -148,8 +132,6 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
   /*** Inicializar valores de características del sistema ***/
 
   /* Inicializa las variables de estado */
-
-  estado_servidores.resize(numero_servidores + 1);
 
   for (int i = 1; i <= numero_servidores; i++)
   {
@@ -176,6 +158,7 @@ void inicializar(char *archivo_parametros, char *archivo_salida)
   /* Especifica el numero de eventos para la funcion controltiempo. */
   num_eventos = 2;
 
+  estado_servidores.resize(numero_servidores + 1);
   area_estado_servidor.resize(numero_servidores + 1);
 
   /*  Crear hoja de cálculo para registro de resultados */
@@ -274,7 +257,7 @@ void controltiempo(void)
 
     fprintf(resultados, "\nLa lista de eventos esta vacia %f",
             tiempo_simulacion);
-    exit(1);
+    cod_error = 1;
   }
 
   /*** La lista de eventos no esta vacia, adelanta el reloj de la simulacion. ***/
@@ -320,7 +303,7 @@ void llegada(void)
       fprintf(resultados,
               "\nDesbordamiento del arreglo tiempo_llegada a la hora");
       fprintf(resultados, "%f", tiempo_simulacion);
-      exit(2);
+      cod_error = 2;
     }
 
     /* Todavia hay espacio en la cola, se almacena el tiempo de llegada del
@@ -462,12 +445,14 @@ void reportes(void)
   /* Calcula y estima los estimados de las medidas deseadas de desempe�o */
   fprintf(resultados, "\n\nEspera promedio en la cola%11.3f minutos\n\n",
           total_de_esperas / num_clientes_espera);
-  fprintf(resultados, "Numero promedio en cola%10.3f\n\n",
+  fprintf(resultados, "Numero promedio en cola%10.6f\n\n",
           area_num_entra_cola / tiempo_simulacion);
   fprintf(resultados, "Uso promedio de los servidores%15.3f\n\n",
           (sum(area_estado_servidor) / numero_servidores) / tiempo_simulacion);
-  fprintf(resultados, "Tiempo de terminacion de la simulacion%12.3f minutos",
+  fprintf(resultados, "Tiempo de terminacion de la simulacion%12.3f minutos\n\n",
           tiempo_simulacion);
+  fprintf(resultados, "Valor formula C de Erlang (simulado)%12.6f",
+          tiempo_servidores_ocupados / tiempo_simulacion);
 
   /* Guardar reporte de registro de eventos en hoja de cálculo */
   if (reporte_xls->book)
@@ -494,9 +479,19 @@ void actualizar_estad_prom_tiempo(void)
   area_num_entra_cola += num_entra_cola * time_since_last_event;
 
   /*Actualiza el area bajo la funcion indicadora de servidor ocupado*/
+  bool hacer_suma = true;
   for (int i = 1; i <= numero_servidores; i++)
   {
     area_estado_servidor[i] += estado_servidores[i] * time_since_last_event;
+    if (estado_servidores[i] == LIBRE && hacer_suma)
+    {
+      hacer_suma = false;
+    }
+  }
+
+  if (hacer_suma == true)
+  {
+    tiempo_servidores_ocupados += time_since_last_event;
   }
 }
 
@@ -504,7 +499,7 @@ float expon(float media) /* Funcion generadora de la exponencias */
 {
   /* Retorna una variable aleatoria exponencial con media "media"*/
 
-  return -media * log(lcgrand(21));
+  return -media * log(lcgrand(1));
 }
 
 float sum(std::vector<float> array)
